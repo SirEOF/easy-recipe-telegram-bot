@@ -7,8 +7,8 @@ import difflib
 import random
 import re
 
-bot = telebot.TeleBot("<TOKEN>")
-dir_path = "<YOUR_DIR>"
+bot = telebot.TeleBot("496518333:AAEnk2vAp8YvbZLcR86p-dZTD3-K-Wganhw")
+dir_path = r"D:\Programming\PycharmProjects\taxi-telegram-bot"
 path_count = "count.json"
 path_exclude = "exclude.json"
 path_cuisine = "cuisines.json"
@@ -24,6 +24,7 @@ mealtypes = ['All', 'Breads', 'Breakfast', 'Cakes', 'Casseroles', 'Cookies', 'De
 cuisines = ['All', 'Asian', 'Caribbean', 'Chinese', 'French', 'German', 'Indian & Thai', 'Italian', 'Mediterranean', 'Mexican', 'Tex-Mex & Southwest']
 
 results_db = {}
+suggestions_db = {}
 
 def read_data(path):
     data = json.load(open(path))
@@ -60,10 +61,12 @@ else:
 
 @bot.message_handler(commands=['start'])
 def start(message):
+    print(message.chat.id)
     bot.send_message(message.chat.id, 'Start creating recipes with /cook <ingridients>')
 
 @bot.message_handler(commands=['cook'])
 def check(message):
+    print(message.chat.id)
     ingridients = message.text[6:]
     ingridients = re.sub(r'\W+,', '', ingridients)
     ingridients = translator.translate(ingridients, dest='en').text
@@ -94,8 +97,16 @@ def check(message):
     total_can_make_right_now = text_dict["total_can_make_right_now"]
     if total_can_make_right_now > 40:
         total_can_make_right_now = 40
+    if total_can_make_right_now == 0:
+        suggestions_db[message.chat.id] = []
+        temp = results[total_can_make_right_now:]
+        for i in temp:
+            if len(i['uses']) > 0:
+                suggestions_db[message.chat.id].append(i)
     results = results[:total_can_make_right_now]
+    random.shuffle(results)
     results_db[message.chat.id] = results[:]
+
     bot.send_message(message.chat.id, 'Total recipes found: ' + str(total_can_make_right_now))
     if total_can_make_right_now < int(count_db[message.chat.id]):
         count = total_can_make_right_now
@@ -113,11 +124,31 @@ def check(message):
             else:
                 bot.send_message(message.chat.id, 'Show next ' + str(count_db[message.chat.id]) + ' results with /next')
     else:
-        bot.send_message(message.chat.id, "Can't find any recepies with that")
+        bot.send_message(message.chat.id, "Can't find any recepies with that.")
+        if len(suggestions_db[message.chat.id]) > 0:
+            bot.send_message(message.chat.id, "We can show you up to 5 suggestions.\n Use /suggest")
+
+@bot.message_handler(commands=['suggest'])
+def showsuggestions(message):
+    if message.chat.id in suggestions_db:
+        if len(suggestions_db[message.chat.id])>0:
+            count = 5
+            if len(suggestions_db[message.chat.id])<count:
+                count = len(suggestions_db[message.chat.id])
+            for i in range(count):
+                bot.send_message(message.chat.id, suggestions_db[message.chat.id][i]['title'] + "\nYou need: " + ', '.join(suggestions_db[message.chat.id][i]['needs']) + '\n' + suggestions_db[message.chat.id][i]['url'])
+            for i in range(count):
+                suggestions_db[message.chat.id].pop(0)
+        else:
+            bot.send_message(message.chat.id, 'No suggestions to show')
+            del results_db[message.chat.id]
+    else:
+        bot.send_message(message.chat.id, 'You don`t have suggestions to show')
 
 
 @bot.message_handler(commands=['exclude'])
 def exclude(message):
+    print(message.chat.id)
     excluding = message.text[9:]
     excluding = translator.translate(excluding, dest='en').text
     excluding = "".join(excluding.split())
@@ -142,6 +173,7 @@ def exclude(message):
 
 @bot.message_handler(commands=['count'])
 def count(message):
+    print(message.chat.id)
     counting = message.text[7:]
     if RepresentsInt(counting):
         count_db[message.chat.id] = counting
@@ -154,6 +186,7 @@ def count(message):
 
 @bot.message_handler(commands=['help'])
 def command_help(message):
+    print(message.chat.id)
     bot.send_message(chat_id=message.chat.id, text="List of commands:")
     bot.send_message(chat_id=message.chat.id, text= "/cook < ingridients > - find suitable recipes")
     bot.send_message(chat_id= message.chat.id,text = "/next - show next n results")
@@ -166,6 +199,7 @@ def command_help(message):
 
 @bot.message_handler(commands=['cuisine'])
 def cuisine(message):
+    print(message.chat.id)
     cuisine_type = message.text[9:]
     cuisine_type = translator.translate(cuisine_type, dest='en').text
     cuisine_type = "".join(cuisine_type.split()).title()
@@ -189,6 +223,7 @@ def cuisine(message):
 
 @bot.message_handler(commands=['mealtype'])
 def mealtype(message):
+    print(message.chat.id)
     meal_type = message.text[10:]
     meal_type = translator.translate(meal_type, dest='en').text
     meal_type = "".join(meal_type.split()).title()
@@ -212,31 +247,43 @@ def mealtype(message):
 
 @bot.message_handler(commands=['mealtypes'])
 def mealtypes_list(message):
+    print(message.chat.id)
     bot.send_message(message.chat.id, ', '.join(mealtypes))
 
 
 @bot.message_handler(commands=['cuisines'])
 def cuisines_list(message):
+    print(message.chat.id)
     bot.send_message(message.chat.id, ', '.join(cuisines))
 
 
 @bot.message_handler(commands=['listsettings'])
 def settings_list(message):
+    print(message.chat.id)
     settingslist = "Your settings:\n"
     if message.chat.id in count_db:
         settingslist += '    Count: ' + str(count_db[message.chat.id]) + '\n'
     else:
         settingslist += '    Count: 5\n'
     if message.chat.id in exclude_db:
-        settingslist += '    Excluded ingridients: ' + exclude_db[message.chat.id] + '\n'
+        exclude_value = "none"
+        if exclude_db[message.chat.id] != "":
+            exclude_value = exclude_db[message.chat.id]
+        settingslist += '    Excluded ingridients: ' + exclude_value + '\n'
     else:
         settingslist += '    Excluded ingridients: none\n'
     if message.chat.id in cuisine_db:
-        settingslist += '    Cuisine: ' + cuisine_db[message.chat.id] + '\n'
+        cuisine_value = "all"
+        if cuisine_db[message.chat.id] != "":
+            cuisine_value = cuisine_db[message.chat.id]
+        settingslist += '    Cuisine: ' + cuisine_value + '\n'
     else:
         settingslist += '    Cuisine: all\n'
     if message.chat.id in mealtype_db:
-        settingslist += '    Meal type: ' + mealtype_db[message.chat.id] + '\n'
+        mealtype_value = "all"
+        if mealtype_db[message.chat.id] != "":
+            mealtype_value = mealtype_db[message.chat.id]
+        settingslist += '    Meal type: ' + mealtype_value + '\n'
     else:
         settingslist += '    Meal type: all\n'
 
@@ -245,6 +292,7 @@ def settings_list(message):
 
 @bot.message_handler(commands=['next'])
 def shownext(message):
+    print(message.chat.id)
     if message.chat.id in results_db:
         if len(results_db[message.chat.id])>0:
             if len(results_db[message.chat.id]) < int(count_db[message.chat.id]):
