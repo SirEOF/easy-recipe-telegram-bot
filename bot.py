@@ -5,9 +5,10 @@ import json
 import os
 import difflib
 import random
+import re
 
 bot = telebot.TeleBot("<TOKEN>")
-dir_path = r"D:\Programming\PycharmProjects\taxi-telegram-bot"
+dir_path = "<YOUR_DIR>"
 path_count = "count.json"
 path_exclude = "exclude.json"
 path_cuisine = "cuisines.json"
@@ -57,9 +58,14 @@ if os.path.exists(os.path.join(dir_path, path_mealtype)):
 else:
     mealtype_db = {}
 
+@bot.message_handler(commands=['start'])
+def start(message):
+    bot.send_message(message.chat.id, 'Start creating recipes with /cook <ingridients>')
+
 @bot.message_handler(commands=['cook'])
 def check(message):
     ingridients = message.text[6:]
+    ingridients = re.sub(r'\W+,', '', ingridients)
     ingridients = translator.translate(ingridients, dest='en').text
     ingridients = "".join(ingridients.split())
     if not message.chat.id in count_db:
@@ -84,22 +90,24 @@ def check(message):
                             "exclude": exclude_db[message.chat.id]})
     text_dict = dict(json.loads(r.text))
     results = text_dict['results']
-    total_can_make_right_now = text_dict["total_can_make_right_now"]
-    results = results[:total_can_make_right_now]
-    results_db[message.chat.id] = results
     random.shuffle(results)
+    total_can_make_right_now = text_dict["total_can_make_right_now"]
+    if total_can_make_right_now > 40:
+        total_can_make_right_now = 40
+    results = results[:total_can_make_right_now]
+    results_db[message.chat.id] = results[:]
     bot.send_message(message.chat.id, 'Total recipes found: ' + str(total_can_make_right_now))
-    if total_can_make_right_now < count_db[message.chat.id]:
+    if total_can_make_right_now < int(count_db[message.chat.id]):
         count = total_can_make_right_now
     else:
-        count = count_db[message.chat.id]
+        count = int(count_db[message.chat.id])
 
     if total_can_make_right_now > 0:
         for i in range(count):
             bot.send_message(message.chat.id, results[i]['title'] + "\n" + results[i]['url'])
             results_db[message.chat.id].pop(0)
         if len(results_db[message.chat.id]) > 0:
-            if len(results_db[message.chat.id]) < count_db[message.chat.id]:
+            if len(results_db[message.chat.id]) < int(count_db[message.chat.id]):
                 bot.send_message(message.chat.id,
                                  'Show next ' + str(len(results_db[message.chat.id])) + ' results with /next')
             else:
@@ -116,13 +124,20 @@ def exclude(message):
     excluding = excluding.replace('vegan', 'poultry,meat,dairy,shellfish,fish,eggs,honey')
     excluding = excluding.replace('vegetarian', 'poultry,meat,fish,shellfish')
     excluding = excluding.replace('pestacatarian', 'poultry,meat')
-    if len(excluding) > 0:
-        exclude_db[message.message_id] = excluding
+    if len(excluding) > 0 and excluding != "clear":
+        exclude_db[message.chat.id] = excluding
         bot.send_message(message.chat.id, 'Excludings updated')
+        with open('exclude.json', 'w') as outfile:
+            json.dump(exclude_db, outfile)
+    elif len(excluding) == 0 or excluding == "clear":
+        exclude_db[message.chat.id] = ""
+        with open('exclude.json', 'w') as outfile:
+            json.dump(exclude_db, outfile)
+        bot.send_message(message.chat.id, 'Excludings cleared')
     else:
         bot.send_message(message.chat.id, 'Wrong arguments')
-    with open('exclude.json', 'w') as outfile:
-        json.dump(exclude_db, outfile)
+        with open('exclude.json', 'w') as outfile:
+            json.dump(exclude_db, outfile)
 
 
 @bot.message_handler(commands=['count'])
@@ -139,9 +154,14 @@ def count(message):
 
 @bot.message_handler(commands=['help'])
 def command_help(message):
-    bot.send_message(chat_id= message.chat.id,text = "/count - number of dishes you want(5 dishes is default)")
-    bot.send_message(chat_id= message.chat.id,text =  "/exclude - write vegan, vegetarian or pescetarian to exclude some products")
-    bot.send_message(chat_id= message.chat.id,text = "/cook ingradient,ingradient - show dishes")
+    bot.send_message(chat_id=message.chat.id, text="List of commands:")
+    bot.send_message(chat_id=message.chat.id, text= "/cook < ingridients > - find suitable recipes")
+    bot.send_message(chat_id= message.chat.id,text = "/next - show next n results")
+    bot.send_message(chat_id=message.chat.id, text= "/exclude < ingridients > - exclude some ingridiens or included types(vegan, vegetarian, pestacatarian)")
+    bot.send_message(chat_id=message.chat.id, text="/count < number > - amount of recipes in response")
+    bot.send_message(chat_id=message.chat.id, text="/cuisine < cuisine > - set cuisine type cuisines - list all cuisine types")
+    bot.send_message(chat_id=message.chat.id, text="/mealtype < type > - set meal type mealtypes - list all meal types")
+    bot.send_message(chat_id=message.chat.id, text="/listsettings - list your settings separate ingridients by ',' you can type  ingridients in any languages")
 
 
 @bot.message_handler(commands=['cuisine'])
@@ -227,16 +247,15 @@ def settings_list(message):
 def shownext(message):
     if message.chat.id in results_db:
         if len(results_db[message.chat.id])>0:
-            if len(results_db[message.chat.id]) < count_db[message.chat.id]:
+            if len(results_db[message.chat.id]) < int(count_db[message.chat.id]):
                 count = len(results_db[message.chat.id])
             else:
-                count = count_db[message.chat.id]
+                count = int(count_db[message.chat.id])
             for i in range(count):
                 bot.send_message(message.chat.id, results_db[message.chat.id][i]['title'] + "\n" + results_db[message.chat.id][i]['url'])
-            for i in range(count):
-                results_db[message.chat.id].pop(0)
+            results_db[message.chat.id] = results_db[message.chat.id][count:]
             if len(results_db[message.chat.id])>0:
-                if len(results_db[message.chat.id]) < count_db[message.chat.id]:
+                if len(results_db[message.chat.id]) < int(count_db[message.chat.id]):
                    bot.send_message(message.chat.id, 'Show next ' + str(len(results_db[message.chat.id])) + ' results with /next')
                 else:
                     bot.send_message(message.chat.id, 'Show next '+str(count_db[message.chat.id]) + ' results with /next')
